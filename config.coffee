@@ -4,10 +4,10 @@ module.exports =
   #######################
 
   # HTTP Server listen port
-  serverPort: false
+  serverPort: 9094
 
   # RTMP Server
-  rtmpServerPort: process.env.OPENSHIFT_NODEJS_PORT || 1953
+  rtmpServerPort: process.env.OPENSHIFT_NODEJS_PORT || 1935
   rtmpServerHost: process.env.OPENSHIFT_NODEJS_IP || "0.0.0.0"
 
   # Server name which will be embedded in

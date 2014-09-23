@@ -1656,4 +1656,4 @@ parseRequest = (data) ->
   }
 
 
-module.exports.setUp = ->
+module.exports.setUp = -> rtmpServer

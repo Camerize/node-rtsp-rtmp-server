@@ -1391,6 +1391,9 @@ class RTMPSession
         })
       ]
     , @chunkSize
+
+    @emit "stream_published", streamName
+
     callback null, publishStart
 
   # FCPublish()
@@ -1922,6 +1925,8 @@ class RTMPServer
       sess.on 'data', (data) ->
         if data? and data.length > 0
           c.write data
+      sess.on 'stream_published', (args...) =>
+        @emit 'stream_published', args...
       sess.on 'stream_reset', (args...) =>
         @emit 'stream_reset', args...
       sess.on 'video_start', (args...) =>
@@ -2170,6 +2175,8 @@ class RTMPTSession
     @rtmpSession.on 'data', (data) =>
       @scheduleTimeout()
       @pendingResponses.push data
+    @rtmpSession.on 'stream_published', (args...) =>
+      @emit 'stream_published', args...
     @rtmpSession.on 'stream_reset', (args...) =>
       @emit 'stream_reset', args...
     @rtmpSession.on 'video_start', (args...) =>
