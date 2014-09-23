@@ -99,7 +99,7 @@ isVideoStarted = false
 isAudioStarted = false
 
 # Create RTMP server
-rtmpServer = new RTMPServer
+rtmpServer = new RTMPServer config
 rtmpServer.on 'stream_reset', ->
   console.log 'stream_reset from rtmp source'
   resetStreams()
@@ -815,8 +815,12 @@ server.on 'error', (err) ->
   throw err
 
 console.log "starting rtsp/http server on port #{config.serverPort}"
-server.listen config.serverPort, '0.0.0.0', 511, ->
-  console.log "server is started"
+
+unless config.serverPort == false
+  server.listen config.serverPort, '0.0.0.0', 511, ->
+    console.log "server is started"
+else
+  console.info("Set config.serverPort to port number for http server.")
 
 videoSequenceNumber = 0
 audioSequenceNumber = 0
@@ -1650,3 +1654,6 @@ parseRequest = (data) ->
     body: body
     headerBytes: headerPart.length  # TODO
   }
+
+
+module.exports.setUp = ->

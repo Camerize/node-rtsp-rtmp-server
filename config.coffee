@@ -3,8 +3,12 @@ module.exports =
   ## Basic configurations
   #######################
 
-  # Server listen port
-  serverPort: 80
+  # HTTP Server listen port
+  serverPort: false
+
+  # RTMP Server
+  rtmpServerPort: process.env.OPENSHIFT_NODEJS_PORT || 1953
+  rtmpServerHost: process.env.OPENSHIFT_NODEJS_IP || "0.0.0.0"
 
   # Server name which will be embedded in
   # RTSP and HTTP response headers.

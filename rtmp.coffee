@@ -1908,9 +1908,10 @@ class RTMPServer
         listener args...
     return
 
-  constructor: ->
+  constructor: (config) ->
     @eventListeners = {}
-    @port = 1935
+    @port = config.rtmpServerPort || 1935
+    @host = config.rtmpServerHost || "0.0.0.0"
     @server = net.createServer (c) =>
       console.log "[rtmp] new client"
       c.clientId = ++clientMaxId
@@ -1951,7 +1952,7 @@ class RTMPServer
 
   start: (callback) ->
     console.log "starting rtmp server on port #{@port}"
-    @server.listen @port, '0.0.0.0', 511, callback
+    @server.listen @port, @host, 511, callback
 
   stop: (callback) ->
     @server.close callback
