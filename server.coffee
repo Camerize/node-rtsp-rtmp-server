@@ -100,24 +100,24 @@ isAudioStarted = false
 
 # Create RTMP server
 rtmpServer = new RTMPServer config
-rtmpServer.on 'stream_reset', ->
+rtmpServer.on 'stream_reset', (stream)->
   console.log 'stream_reset from rtmp source'
-  resetStreams()
-rtmpServer.on 'video_start', ->
-  onReceiveVideoControlBuffer()
-rtmpServer.on 'video_data', (pts, dts, nalUnits) ->
-  onReceiveVideoPacket nalUnits, pts, dts
-rtmpServer.on 'audio_start', ->
-  onReceiveAudioControlBuffer()
-rtmpServer.on 'audio_data', (pts, dts, adtsFrame) ->
-  onReceiveAudioPacket adtsFrame, pts, dts
+  resetStreams(stream)
+rtmpServer.on 'video_start', (stream)->
+  onReceiveVideoControlBuffer(stream)
+rtmpServer.on 'video_data', (stream, pts, dts, nalUnits) ->
+  onReceiveVideoPacket stream, nalUnits, pts, dts
+rtmpServer.on 'audio_start', (stream)->
+  onReceiveAudioControlBuffer(stream)
+rtmpServer.on 'audio_data', (stream, pts, dts, adtsFrame) ->
+  onReceiveAudioPacket stream, adtsFrame, pts, dts
 
 # Reset audio/video streams
-resetStreams = ->
+resetStreams = (stream) ->
   isVideoStarted = false
   isAudioStarted = false
   spropParameterSets = ''
-  rtmpServer.resetStreams()
+  rtmpServer.resetStreams(stream)
 
 rtmpServer.start ->
   # RTMP server is ready
@@ -309,36 +309,37 @@ onReceiveAudioRTCP = (buf) ->
 videoFrames = 0
 audioFrames = 0
 
-onReceiveBuffer = (buf) ->
-  packetType = buf[0]
-  switch packetType
-    when 0x00 then onReceiveVideoControlBuffer buf
-    when 0x01 then onReceiveAudioControlBuffer buf
-    when 0x02 then onReceiveVideoDataBuffer buf
-    when 0x03 then onReceiveAudioDataBuffer buf
-    when 0x04 then onReceiveVideoDataBufferWithDTS buf
-    when 0x05 then onReceiveAudioDataBufferWithDTS buf
-    else
-      console.log "unknown packet type: #{packetType}"
-      # ignore
-  return
 
-onReceiveVideoControlBuffer = (buf) ->
-  console.log "video start"
+# onReceiveBuffer = (buf) ->
+#   packetType = buf[0]
+#   switch packetType
+#     when 0x00 then onReceiveVideoControlBuffer buf
+#     when 0x01 then onReceiveAudioControlBuffer buf
+#     when 0x02 then onReceiveVideoDataBuffer buf
+#     when 0x03 then onReceiveAudioDataBuffer buf
+#     when 0x04 then onReceiveVideoDataBufferWithDTS buf
+#     when 0x05 then onReceiveAudioDataBufferWithDTS buf
+#     else
+#       console.log "unknown packet type: #{packetType}"
+#       # ignore
+#   return
+
+onReceiveVideoControlBuffer = (stream, buf) ->
+  console.log "video start #{stream}" 
   isVideoStarted = true
   timeForVideoRTPZero = Date.now()
   timeForAudioRTPZero = timeForVideoRTPZero
   spropParameterSets = ''
-  rtmpServer.startVideo()
+  rtmpServer.startVideo(stream)
 
-onReceiveAudioControlBuffer = (buf) ->
-  console.log "audio start"
+onReceiveAudioControlBuffer = (stream, buf) ->
+  console.log "audio start #{stream}"
   isAudioStarted = true
   timeForAudioRTPZero = Date.now()
   timeForVideoRTPZero = timeForAudioRTPZero
-  rtmpServer.startAudio()
+  rtmpServer.startAudio(stream)
 
-onReceiveVideoDataBuffer = (buf) ->
+onReceiveVideoDataBuffer = (stream, buf) ->
   pts = buf[1] * 0x010000000000 + \
         buf[2] * 0x0100000000   + \
         buf[3] * 0x01000000     + \
@@ -347,9 +348,9 @@ onReceiveVideoDataBuffer = (buf) ->
         buf[6]
   dts = pts
   nalUnit = buf[7..]
-  onReceiveVideoPacket nalUnit, pts, dts
+  onReceiveVideoPacket stream, nalUnit, pts, dts
 
-onReceiveVideoDataBufferWithDTS = (buf) ->
+onReceiveVideoDataBufferWithDTS = (stream, buf) ->
   pts = buf[1] * 0x010000000000 + \
         buf[2] * 0x0100000000   + \
         buf[3] * 0x01000000     + \
@@ -363,9 +364,9 @@ onReceiveVideoDataBufferWithDTS = (buf) ->
         buf[11] * 0x0100         + \
         buf[12]
   nalUnit = buf[13..]
-  onReceiveVideoPacket nalUnit, pts, dts
+  onReceiveVideoPacket stream, nalUnit, pts, dts
 
-onReceiveAudioDataBuffer = (buf) ->
+onReceiveAudioDataBuffer = (stream, buf) ->
   pts = buf[1] * 0x010000000000 + \
         buf[2] * 0x0100000000   + \
         buf[3] * 0x01000000     + \
@@ -374,9 +375,9 @@ onReceiveAudioDataBuffer = (buf) ->
         buf[6]
   dts = pts
   adtsFrame = buf[7..]
-  onReceiveAudioPacket adtsFrame, pts, dts
+  onReceiveAudioPacket stream, adtsFrame, pts, dts
 
-onReceiveAudioDataBufferWithDTS = (buf) ->
+onReceiveAudioDataBufferWithDTS = (stream, buf) ->
   pts = buf[1] * 0x010000000000 + \
         buf[2] * 0x0100000000   + \
         buf[3] * 0x01000000     + \
@@ -390,7 +391,7 @@ onReceiveAudioDataBufferWithDTS = (buf) ->
         buf[11] * 0x0100         + \
         buf[12]
   adtsFrame = buf[13..]
-  onReceiveAudioPacket adtsFrame, pts, dts
+  onReceiveAudioPacket stream, adtsFrame, pts, dts
 
 createReceiver = (name, callback) ->
   return net.createServer (c) ->
@@ -1033,7 +1034,7 @@ sendVideoPacketAsSingleNALUnit = (nalUnit, timestamp) ->
 # arguments:
 #   nalUnit: Buffer
 #   pts: timestamp in 90 kHz clock rate (PTS)
-onReceiveVideoPacket = (nalUnitGlob, pts, dts) ->
+onReceiveVideoPacket = (stream, nalUnitGlob, pts, dts) ->
   nalUnits = h264.splitIntoNALUnits nalUnitGlob
   if nalUnits.length is 0
     return
@@ -1083,7 +1084,7 @@ onReceiveVideoPacket = (nalUnitGlob, pts, dts) ->
     else
       sendVideoPacketAsSingleNALUnit nalUnit, pts, dts # TODO dts
 
-  rtmpServer.sendVideoPacket nalUnits, pts, dts
+  rtmpServer.sendVideoPacket stream, nalUnits, pts, dts
 
   return
 
@@ -1094,7 +1095,7 @@ updateAudioSampleRate = (sampleRate) ->
 updateAudioChannels = (channels) ->
   config.audioChannels = channels
 
-onReceiveAudioPacket = (adtsFrameGlob, pts, dts) ->
+onReceiveAudioPacket = (stream, adtsFrameGlob, pts, dts) ->
   adtsFrames = aac.splitIntoADTSFrames adtsFrameGlob
   if adtsFrames.length is 0
     return
@@ -1130,7 +1131,7 @@ onReceiveAudioPacket = (adtsFrameGlob, pts, dts) ->
   for adtsFrame, i in adtsFrames
     rawDataBlock = adtsFrame[7..]
     rawDataBlocks.push rawDataBlock
-    rtmpServer.sendAudioPacket rawDataBlock,
+    rtmpServer.sendAudioPacket stream, rawDataBlock,
       Math.round(pts + ptsPerFrame * i),
       Math.round(dts + ptsPerFrame * i)
 
