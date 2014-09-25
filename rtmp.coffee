@@ -150,64 +150,64 @@ createAudioMessage = (params) ->
     body: params.body
   , params.chunkSize
 
-sendVideoMessage = (params) ->
-  allSessions = []
-  for clientID, session of rtmptSessions
-    allSessions.push session.rtmpSession
+# sendVideoMessage = (params) ->
+#   allSessions = []
+#   for clientID, session of rtmptSessions
+#     allSessions.push session.rtmpSession
 
-  for clientID, session of sessions
-    allSessions.push session
+#   for clientID, session of sessions
+#     allSessions.push session
 
-  for session in allSessions
-    if session.isWaitingForKeyFrame and params.isKeyFrame
-      session.isFirstVideoMessage = true
-      session.isFirstAudioMessage = true
-      session.isPlaying = true
-      session.playStartTimestamp = params.timestamp
-      session.isWaitingForKeyFrame = false
-    if session.isPlaying
-      messages = []
-      if session.isFirstVideoMessage
-        emptyVideoMessage = session.createVideoMessage
-          body: new Buffer [
-            (5 << 4) | config.flv.videocodecid,
-            0x00
-          ]
-          timestamp: 0
-          chunkSize: @chunkSize
-        messages.push emptyVideoMessage
-        session.isFirstVideoMessage = false
-      videoMessage = session.createVideoMessage
-        body: params.body
-        timestamp: session.getScaledTimestamp params.timestamp
-        chunkSize: session.chunkSize
-      messages.push videoMessage
-      session.sendData messages
+#   for session in allSessions
+#     if session.isWaitingForKeyFrame and params.isKeyFrame
+#       session.isFirstVideoMessage = true
+#       session.isFirstAudioMessage = true
+#       session.isPlaying = true
+#       session.playStartTimestamp = params.timestamp
+#       session.isWaitingForKeyFrame = false
+#     if session.isPlaying
+#       messages = []
+#       if session.isFirstVideoMessage
+#         emptyVideoMessage = session.createVideoMessage
+#           body: new Buffer [
+#             (5 << 4) | config.flv.videocodecid,
+#             0x00
+#           ]
+#           timestamp: 0
+#           chunkSize: @chunkSize
+#         messages.push emptyVideoMessage
+#         session.isFirstVideoMessage = false
+#       videoMessage = session.createVideoMessage
+#         body: params.body
+#         timestamp: session.getScaledTimestamp params.timestamp
+#         chunkSize: session.chunkSize
+#       messages.push videoMessage
+#       session.sendData messages
 
-sendAudioMessage = (params) ->
-  allSessions = []
-  for clientID, session of rtmptSessions
-    allSessions.push session.rtmpSession
+# sendAudioMessage = (params) ->
+#   allSessions = []
+#   for clientID, session of rtmptSessions
+#     allSessions.push session.rtmpSession
 
-  for clientID, session of sessions
-    allSessions.push session
+#   for clientID, session of sessions
+#     allSessions.push session
 
-  for session in allSessions
-    if session.isPlaying
-      messages = []
-      if session.isFirstAudioMessage
-        emptyAudioMessage = session.createAudioMessage
-          body: new Buffer []
-          timestamp: 0
-          chunkSize: @chunkSize
-        messages.push emptyAudioMessage
-        session.isFirstAudioMessage = false
-      audioMessage = session.createAudioMessage
-        body: params.body
-        timestamp: session.getScaledTimestamp params.timestamp
-        chunkSize: session.chunkSize
-      messages.push audioMessage
-      session.sendData messages
+#   for session in allSessions
+#     if session.isPlaying
+#       messages = []
+#       if session.isFirstAudioMessage
+#         emptyAudioMessage = session.createAudioMessage
+#           body: new Buffer []
+#           timestamp: 0
+#           chunkSize: @chunkSize
+#         messages.push emptyAudioMessage
+#         session.isFirstAudioMessage = false
+#       audioMessage = session.createAudioMessage
+#         body: params.body
+#         timestamp: session.getScaledTimestamp params.timestamp
+#         chunkSize: session.chunkSize
+#       messages.push audioMessage
+#       session.sendData messages
 
 queueVideoMessage = (params) ->
   params.avType = 'video'
@@ -493,25 +493,31 @@ flushRTMPMessages = ->
     allSessions.push session
 
   for session in allSessions
-    msgs = null
+    msgs = [];
+    for rtmpMessage, i in rtmpMessagesToSend
+      msgs.push rtmpMessage if rtmpMessage.stream == session.stream
+
+    if not msgs? || msgs.length == 0
+      continue
+
     if session.isWaitingForKeyFrame
       if isVideoStarted  # has video stream
-        for rtmpMessage, i in rtmpMessagesToSend
+        for rtmpMessage, i in msgs
           if rtmpMessage.avType is 'video' and rtmpMessage.isKeyFrame
             session.isPlaying = true
             session.playStartTimestamp = rtmpMessage.originalTimestamp
             session.isWaitingForKeyFrame = false
-            msgs = rtmpMessagesToSend[i..]
+            msgs = msgs[i..]
             break
       else  # audio only
         session.isPlaying = true
-        session.playStartTimestamp = rtmpMessagesToSend[0].originalTimestamp
+        session.playStartTimestamp = msgs[0].originalTimestamp
         session.isWaitingForKeyFrame = false
-        msgs = rtmpMessagesToSend
+        msgs = msgs
     else
-      msgs = rtmpMessagesToSend
+      msgs = msgs
 
-    if not msgs?
+    if not msgs? || msgs.length == 0
       continue
 
     if session.isPlaying
@@ -742,8 +748,8 @@ createAMF0CommandMessage = (params, chunkSize) ->
   , chunkSize
 
 class RTMPSession
-  constructor: (socket) ->
-    console.log "[rtmp] created a new session"
+  constructor: (socket, stream) ->
+    console.log "[rtmp] created a new session in #{stream}"
     @listeners = {}
     @state = SESSION_STATE_NEW
     @socket = socket
@@ -812,6 +818,9 @@ class RTMPSession
     @isWaitingForKeyFrame = false
 
   teardown: ->
+    if (@streamPublisher)
+      @streamPublisher = false
+      @emit "stream_unpublished", @stream
     if @isTearedDown
       console.log "[rtmp] already teared down"
       return
@@ -1322,6 +1331,7 @@ class RTMPSession
   respondFCUnpublish: (requestCommand, callback) ->
     streamName = requestCommand.objects[1]?.value
     console.log "[rtmp] FCUnpublish: #{streamName}"
+
     _result = createAMF0CommandMessage
       chunkStreamID: 3
       timestamp: 0
@@ -1351,6 +1361,9 @@ class RTMPSession
       ]
     , @chunkSize
 
+    @streamPublisher = false
+    @emit "stream_unpublished", @stream
+
     callback null, @concatenate [
       _result
       unpublishSuccess
@@ -1370,7 +1383,9 @@ class RTMPSession
     else
       streamName = publishingName
 
-    @emit 'stream_reset'
+    @stream = streamName
+    @streamPublisher = true
+    @emit 'stream_reset', streamName
     @isFirstVideoReceived = false
     @isFirstAudioReceived = false
 
@@ -1665,6 +1680,8 @@ class RTMPSession
       when 'play'
         streamName = commandMessage.objects[1]?.value
         console.log "[rtmp] requested stream: #{streamName}"
+        @stream = streamName
+        @streamPublisher = false
         @respondPlay commandMessage, callback
       when 'closeStream'
         @closeStream callback
@@ -1835,22 +1852,22 @@ class RTMPSession
               audioData = parseAudioMessage rtmpMessage.body
               if audioData.adtsFrame?
                 if not @isFirstAudioReceived
-                  @emit 'audio_start'
+                  @emit 'audio_start', @stream
                   @isFirstAudioReceived = true
                 pts = dts = flv.convertMsToPTS rtmpMessage.timestamp
-                @emit 'audio_data', pts, dts, audioData.adtsFrame
+                @emit 'audio_data', @stream, pts, dts, audioData.adtsFrame
               seq.done()
             when 9  # Video Message (incoming)
               videoData = parseVideoMessage rtmpMessage.body
               if videoData.nalUnitGlob?
                 if not @isFirstVideoReceived
-                  @emit 'video_start'
+                  @emit 'video_start', @stream
                   @isFirstVideoReceived = true
                 dts = rtmpMessage.timestamp
                 pts = dts + videoData.info.videoDataTag.compositionTime
                 pts = flv.convertMsToPTS pts
                 dts = flv.convertMsToPTS dts
-                @emit 'video_data', pts, dts, videoData.nalUnitGlob  # TODO pts, dts
+                @emit 'video_data', @stream, pts, dts, videoData.nalUnitGlob  # TODO pts, dts
               seq.done()
             when 15  # AMF3 data message
               dataMessage = parseAMF0DataMessage rtmpMessage.body[1..]
@@ -1927,6 +1944,8 @@ class RTMPServer
           c.write data
       sess.on 'stream_published', (args...) =>
         @emit 'stream_published', args...
+      sess.on 'stream_unpublished', (args...) =>
+        @emit 'stream_unpublished', args...
       sess.on 'stream_reset', (args...) =>
         @emit 'stream_reset', args...
       sess.on 'video_start', (args...) =>
@@ -1981,7 +2000,7 @@ class RTMPServer
     ppsPacket = buf
 
   # Packets must be come in DTS ascending order
-  sendVideoPacket: (nalUnits, pts, dts) ->
+  sendVideoPacket: (stream, nalUnits, pts, dts) ->
     if dts > pts
       throw new Error "pts must be >= dts (pts=#{pts} dts=#{dts})"
     timestamp = convertPTSToMilliseconds dts
@@ -2036,13 +2055,14 @@ class RTMPServer
     buf = Buffer.concat message
 
     queueVideoMessage
+      stream: stream
       body: buf
       timestamp: timestamp
       isKeyFrame: hasKeyFrame
 
     return
 
-  sendAudioPacket: (rawDataBlock, timestamp) ->
+  sendAudioPacket: (stream, rawDataBlock, timestamp) ->
     timestamp = convertPTSToMilliseconds timestamp
     lastTimestamp = timestamp
 
@@ -2056,12 +2076,13 @@ class RTMPServer
     buf = Buffer.concat [headerBytes, rawDataBlock], rawDataBlock.length + 2
 
     queueAudioMessage
+      stream: stream
       body: buf
       timestamp: timestamp
 
     return
 
-  resetStreams: ->
+  resetStreams: (stream)->
     spsPacket = null
     ppsPacket = null
     isAudioStarted = false
@@ -2177,6 +2198,8 @@ class RTMPTSession
       @pendingResponses.push data
     @rtmpSession.on 'stream_published', (args...) =>
       @emit 'stream_published', args...
+    @rtmpSession.on 'stream_unpublished', (args...) =>
+      @emit 'stream_unpublished', args...
     @rtmpSession.on 'stream_reset', (args...) =>
       @emit 'stream_reset', args...
     @rtmpSession.on 'video_start', (args...) =>
