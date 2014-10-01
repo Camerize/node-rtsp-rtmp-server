@@ -62,11 +62,11 @@ DEBUG_DISABLE_UDP_TRANSPORT = false
 # Two CRLFs
 CRLF_CRLF = [ 0x0d, 0x0a, 0x0d, 0x0a ]
 
-detectedVideoWidth = null
-detectedVideoHeight = null
-detectedAudioSampleRate = null
-detectedAudioChannels = null
-detectedAudioPeriodSize = null
+# detectedVideoWidth = null
+# detectedVideoHeight = null
+# detectedAudioSampleRate = null
+# detectedAudioChannels = null
+# detectedAudioPeriodSize = null
 
 # Delete UNIX domain sockets
 deleteReceiverSocketsSync = ->
@@ -125,8 +125,8 @@ rtmpServer.start ->
 httpHandler = new HTTPHandler
 httpHandler.setServerName serverName
 
-updateConfig = ->
-  rtmpServer.updateConfig config
+updateConfig = (stream)->
+  rtmpServer.updateConfig stream
 
 # profile-level-id is defined in RFC 6184.
 # profile_idc, constraint flags for Baseline profile are
@@ -325,7 +325,7 @@ audioFrames = 0
 #   return
 
 onReceiveVideoControlBuffer = (stream, buf) ->
-  console.log "video start #{stream}" 
+  console.log "video start #{stream.name}" 
   isVideoStarted = true
   timeForVideoRTPZero = Date.now()
   timeForAudioRTPZero = timeForVideoRTPZero
@@ -333,7 +333,7 @@ onReceiveVideoControlBuffer = (stream, buf) ->
   rtmpServer.startVideo(stream)
 
 onReceiveAudioControlBuffer = (stream, buf) ->
-  console.log "audio start #{stream}"
+  console.log "audio start #{stream.name}"
   isAudioStarted = true
   timeForAudioRTPZero = Date.now()
   timeForVideoRTPZero = timeForAudioRTPZero
@@ -1039,6 +1039,7 @@ onReceiveVideoPacket = (stream, nalUnitGlob, pts, dts) ->
   if nalUnits.length is 0
     return
 
+  params = stream.params
   for nalUnit, i in nalUnits
     # detect configuration
     nalUnitType = h264.getNALUnitType nalUnit
@@ -1047,9 +1048,9 @@ onReceiveVideoPacket = (stream, nalUnitGlob, pts, dts) ->
       # ignore access unit delimiters
       continue
     if nalUnitType is h264.NAL_UNIT_TYPE_PPS
-      rtmpServer.updatePPS nalUnit
+      rtmpServer.updatePPS stream, nalUnit
     else if nalUnitType is h264.NAL_UNIT_TYPE_SPS
-      rtmpServer.updateSPS nalUnit
+      rtmpServer.updateSPS stream, nalUnit
       try
         h264.readSPS nalUnit
       catch e
@@ -1059,26 +1060,24 @@ onReceiveVideoPacket = (stream, nalUnitGlob, pts, dts) ->
       sps = h264.getSPS()
       frameSize = h264.getFrameSize sps
       isConfigUpdated = false
-      if detectedVideoWidth isnt frameSize.width
-        detectedVideoWidth = frameSize.width
-        console.log "video width has been changed to #{detectedVideoWidth}"
-        config.videoWidth = detectedVideoWidth
+      if params.videoWidth isnt frameSize.width
+        params.videoWidth = frameSize.width
+        console.log "video width has been changed to #{params.videoWidth}"
         isConfigUpdated = true
-      if detectedVideoHeight isnt frameSize.height
-        detectedVideoHeight = frameSize.height
-        console.log "video height has been changed to #{detectedVideoHeight}"
-        config.videoHeight = detectedVideoHeight
+      if params.videoHeight isnt frameSize.height
+        params.videoHeight = frameSize.height
+        console.log "video height has been changed to #{params.videoHeight}"
         isConfigUpdated = true
-      if config.flv.avclevel isnt sps.level_idc
-        config.flv.avclevel = sps.level_idc
-        console.log "avclevel has been changed to #{config.flv.avclevel}"
+      if params.flv.avclevel isnt sps.level_idc
+        params.flv.avclevel = sps.level_idc
+        console.log "avclevel has been changed to #{params.flv.avclevel}"
         isConfigUpdated = true
-      if config.flv.avcprofile isnt sps.profile_idc
-        config.flv.avcprofile = sps.profile_idc
-        console.log "avcprofile has been changed to #{config.flv.avcprofile}"
+      if params.flv.avcprofile isnt sps.profile_idc
+        params.flv.avcprofile = sps.profile_idc
+        console.log "avcprofile has been changed to #{params.flv.avcprofile}"
         isConfigUpdated = true
       if isConfigUpdated
-        updateConfig()
+        updateConfig(stream)
     if nalUnit.length >= SINGLE_NAL_UNIT_MAX_SIZE
       sendVideoPacketWithFragment nalUnit, pts, dts # TODO dts
     else
@@ -1088,12 +1087,12 @@ onReceiveVideoPacket = (stream, nalUnitGlob, pts, dts) ->
 
   return
 
-updateAudioSampleRate = (sampleRate) ->
+updateAudioSampleRate = (stream,sampleRate) ->
   audioClockRate = sampleRate
-  config.audioSampleRate = sampleRate
+  stream.params.audioSampleRate = sampleRate
 
-updateAudioChannels = (channels) ->
-  config.audioChannels = channels
+updateAudioChannels = (stream, channels) ->
+  stream.params.audioChannels = channels
 
 onReceiveAudioPacket = (stream, adtsFrameGlob, pts, dts) ->
   adtsFrames = aac.splitIntoADTSFrames adtsFrameGlob
@@ -1110,20 +1109,20 @@ onReceiveAudioPacket = (stream, adtsFrameGlob, pts, dts) ->
   else
     timestamp = pts
 
-  if detectedAudioSampleRate isnt adtsInfo.sampleRate
-    detectedAudioSampleRate = adtsInfo.sampleRate
-    console.log "audio sample rate has been changed to #{detectedAudioSampleRate}"
-    updateAudioSampleRate adtsInfo.sampleRate
+  if stream.params.audioSampleRate isnt adtsInfo.sampleRate
+    stream.params.audioSampleRate = adtsInfo.sampleRate
+    console.log "audio sample rate has been changed to #{adtsInfo.sampleRate}"
+    updateAudioSampleRate stream, adtsInfo.sampleRate
 
-  if detectedAudioChannels isnt adtsInfo.channels
-    detectedAudioChannels = adtsInfo.channels
-    console.log "audio channels has been changed to #{detectedAudioChannels}"
-    updateAudioChannels adtsInfo.channels
+  if stream.params.audioChannels  isnt adtsInfo.channels
+    stream.params.audioChannels  = adtsInfo.channels
+    console.log "audio channels has been changed to #{adtsInfo.channels}"
+    updateAudioChannels stream, adtsInfo.channels
 
-  if config.audioObjectType isnt adtsInfo.audioObjectType
-    config.audioObjectType = adtsInfo.audioObjectType
-    console.log "audio object type has been changed to #{config.audioObjectType}"
-    updateConfig()
+  if stream.params.audioObjectType isnt adtsInfo.audioObjectType
+    stream.params.audioObjectType = adtsInfo.audioObjectType
+    console.log "audio object type has been changed to #{stream.params.audioObjectType}"
+    updateConfig(stream)
 
   rtpTimePerFrame = 1024
 
@@ -1658,3 +1657,4 @@ parseRequest = (data) ->
 
 
 module.exports.setUp = -> rtmpServer
+module.exports.allStreams = -> RTMPServer.streams

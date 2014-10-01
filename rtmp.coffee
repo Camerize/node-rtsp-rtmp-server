@@ -43,14 +43,20 @@ clientMaxId = 0
 # The latest timestamp of video or audio data
 lastTimestamp = null
 
-# NAL unit type 7: Sequence parameter set
-spsPacket = null
 
-# NAL unit type 8: Picture parameter set
-ppsPacket = null
+# # NAL unit type 7: Sequence parameter set
+# spsPacket = null
 
-isAudioStarted = false
-isVideoStarted = false
+# # NAL unit type 8: Picture parameter set
+# ppsPacket = null
+
+# isAudioStarted = false
+# isVideoStarted = false
+
+streams = { }
+
+getStreamByName = (name)->
+  return streams[name] = streams[name] || { name: name}
 
 # Generate a new client ID without collision
 generateNewClientID = ->
@@ -68,14 +74,14 @@ generateClientID = ->
     clientID += possible.charAt((Math.random() * numPossible) | 0)
   return clientID
 
-retainCodecConfigPacket = (buf) ->
-  nalUnitType = buf[0] & 0x1f
-  if nalUnitType is 7
-    spsPacket = buf
-  else if nalUnitType is 8
-    ppsPacket = buf
-  else
-    console.error "[rtmp] unknown NAL unit type: #{nalUnitType}"
+# retainCodecConfigPacket = (buf) ->
+#   nalUnitType = buf[0] & 0x1f
+#   if nalUnitType is 7
+#     spsPacket = buf
+#   else if nalUnitType is 8
+#     ppsPacket = buf
+#   else
+#     console.error "[rtmp] unknown NAL unit type: #{nalUnitType}"
 
 parseAcknowledgementMessage = (buf) ->
   sequenceNumber = (buf[0] * Math.pow(256, 3)) + (buf[1] << 16) + (buf[2] << 8) + buf[3]
@@ -86,16 +92,17 @@ parseAcknowledgementMessage = (buf) ->
 convertPTSToMilliseconds = (pts) ->
   Math.round pts / 90
 
-ascInfo = null
-avcInfo = null
+# ascInfo = null
+# avcInfo = null
 
-parseVideoMessage = (buf) ->
+parseVideoMessage = (stream, buf) ->
   info = flv.parseVideo buf
   nalUnitGlob = null
+  avcInfo = stream.avcInfo
   switch info.videoDataTag.avcPacketType
     when flv.AVC_PACKET_TYPE_SEQUENCE_HEADER
       # Retain AVC configuration
-      avcInfo = info.avcDecoderConfigurationRecord
+      avcInfo = stream.avcInfo = info.avcDecoderConfigurationRecord
       if avcInfo.numOfSPS > 1
         console.log "flv:parseVideo(): warn: numOfSPS is #{numOfSPS} > 1 (may not work)"
       if avcInfo.numOfPPS > 1
@@ -118,14 +125,15 @@ parseVideoMessage = (buf) ->
     nalUnitGlob: nalUnitGlob
   }
 
-parseAudioMessage = (buf) ->
+parseAudioMessage = (stream, buf) ->
   info = flv.parseAudio buf
   adtsFrame = null
+  ascInfo = stream.ascInfo
   switch info.audioDataTag.aacPacketType
     when flv.AAC_PACKET_TYPE_SEQUENCE_HEADER
       if info.audioSpecificConfig?
         # Retain AudioSpecificConfig
-        ascInfo = info.audioSpecificConfig
+        ascInfo = stream.ascInfo = info.audioSpecificConfig
       else
         console.log "[rtmp] skipping empty AudioSpecificConfig"
     when flv.AAC_PACKET_TYPE_RAW
@@ -501,7 +509,7 @@ flushRTMPMessages = ->
       continue
 
     if session.isWaitingForKeyFrame
-      if isVideoStarted  # has video stream
+      if session.stream.isVideoStarted  # has video stream
         for rtmpMessage, i in msgs
           if rtmpMessage.avType is 'video' and rtmpMessage.isKeyFrame
             session.isPlaying = true
@@ -1383,9 +1391,9 @@ class RTMPSession
     else
       streamName = publishingName
 
-    @stream = streamName
+    @stream = getStreamByName(streamName)
     @streamPublisher = true
-    @emit 'stream_reset', streamName
+    @emit 'stream_reset', @stream
     @isFirstVideoReceived = false
     @isFirstAudioReceived = false
 
@@ -1407,7 +1415,7 @@ class RTMPSession
       ]
     , @chunkSize
 
-    @emit "stream_published", streamName
+    @emit "stream_published", @stream
 
     callback null, publishStart
 
@@ -1522,25 +1530,25 @@ class RTMPSession
       hasMetadata : true
       hasCuePoints: false
 
-    if isVideoStarted
+    if @stream.isVideoStarted
       metadata.hasVideo      = true
-      metadata.framerate     = config.videoFrameRate
-      metadata.height        = config.videoHeight
-      metadata.videocodecid  = config.flv.videocodecid
-      metadata.videodatarate = config.videoBitrateKbps
-      metadata.width         = config.videoWidth
-      metadata.avclevel      = config.flv.avclevel
-      metadata.avcprofile    = config.flv.avcprofile
+      metadata.framerate     = @stream.params.videoFrameRate
+      metadata.height        = @stream.params.videoHeight
+      metadata.videocodecid  = @stream.params.flv.videocodecid
+      metadata.videodatarate = @stream.params.videoBitrateKbps
+      metadata.width         = @stream.params.videoWidth
+      metadata.avclevel      = @stream.params.flv.avclevel
+      metadata.avcprofile    = @stream.params.flv.avcprofile
 
-    if isAudioStarted
+    if @stream.isAudioStarted
       metadata.hasAudio        = true
-      metadata.audiocodecid    = config.flv.audiocodecid
-      metadata.audiodatarate   = config.audioBitrateKbps
+      metadata.audiocodecid    = @stream.params.flv.audiocodecid
+      metadata.audiodatarate   = @stream.params.audioBitrateKbps
       metadata.audiodelay      = 0
-      metadata.audiosamplerate = config.audioSampleRate
-      metadata.stereo          = config.audioChannels > 1
-      metadata.audiochannels   = config.audioChannels
-      metadata.aacaot          = config.audioObjectType
+      metadata.audiosamplerate = @stream.params.audioSampleRate
+      metadata.stereo          = @stream.params.audioChannels > 1
+      metadata.audiochannels   = @stream.params.audioChannels
+      metadata.aacaot          = @stream.params.audioObjectType
 
     onMetaData = createAMF0DataMessage
       chunkStreamID: 4
@@ -1567,7 +1575,10 @@ class RTMPSession
   getCodecConfigs: ->
     configMessages = []
 
-    if isVideoStarted
+    spsPacket = @stream.spsPacket
+    ppsPacket = @stream.ppsPacket
+
+    if @stream.isVideoStarted
       if not spsPacket? or not ppsPacket?
         console.error "[rtmp] error: SPS or PPS is not present"
         return
@@ -1577,7 +1588,7 @@ class RTMPSession
       ppsLen = ppsPacket.length
       buf = new Buffer [
         # VIDEODATA tag (Appeared in Adobe's Video File Format Spec v10.1 E.4.3.1 VIDEODATA
-        (1 << 4) | config.flv.videocodecid, # 1=key frame
+        (1 << 4) | @stream.params.flv.videocodecid, # 1=key frame
         0x00,  # 0=AVC sequence header (configuration data)
         0x00,  # composition time
         0x00,  # composition time
@@ -1605,16 +1616,16 @@ class RTMPSession
         chunkSize: @chunkSize
       configMessages.push videoConfigMessage
 
-    if isAudioStarted
+    if @stream.isAudioStarted
       # audio
       # TODO: support other than AAC too?
       buf = flv.createAACAudioDataTag
         aacPacketType: flv.AAC_PACKET_TYPE_SEQUENCE_HEADER
       # buf is an array at this point
       buf = buf.concat aac.createAudioSpecificConfig
-        audioObjectType: config.audioObjectType
-        sampleRate: config.audioSampleRate
-        channels: config.audioChannels
+        audioObjectType: @stream.params.audioObjectType
+        sampleRate: @stream.params.audioSampleRate
+        channels: @stream.params.audioChannels
         frameLength: 1024  # TODO: How to detect 960?
       buf = new Buffer buf
 
@@ -1680,7 +1691,7 @@ class RTMPSession
       when 'play'
         streamName = commandMessage.objects[1]?.value
         console.log "[rtmp] requested stream: #{streamName}"
-        @stream = streamName
+        @stream = getStreamByName(streamName)
         @streamPublisher = false
         @respondPlay commandMessage, callback
       when 'closeStream'
@@ -1849,7 +1860,7 @@ class RTMPSession
                 rtmpMessage.body[3]
               seq.done()
             when 8  # Audio Message (incoming)
-              audioData = parseAudioMessage rtmpMessage.body
+              audioData = parseAudioMessage @stream, rtmpMessage.body
               if audioData.adtsFrame?
                 if not @isFirstAudioReceived
                   @emit 'audio_start', @stream
@@ -1858,7 +1869,7 @@ class RTMPSession
                 @emit 'audio_data', @stream, pts, dts, audioData.adtsFrame
               seq.done()
             when 9  # Video Message (incoming)
-              videoData = parseVideoMessage rtmpMessage.body
+              videoData = parseVideoMessage @stream, rtmpMessage.body
               if videoData.nalUnitGlob?
                 if not @isFirstVideoReceived
                   @emit 'video_start', @stream
@@ -1990,14 +2001,15 @@ class RTMPServer
         delete rtmptSessions[socket.rtmptClientID]
         rtmptSessionsCount--
 
-  updateConfig: (newConfig) ->
-    config = newConfig
+  updateConfig: (stream) ->
+    #changes already reflected on stream.params, config changed to only hold global config, not stream config
+    #stream.config = newConfig
 
-  updateSPS: (buf) ->
-    spsPacket = buf
+  updateSPS: (stream, buf) ->
+    stream.spsPacket = buf
 
-  updatePPS: (buf) ->
-    ppsPacket = buf
+  updatePPS: (stream, buf) ->
+    stream.ppsPacket = buf
 
   # Packets must be come in DTS ascending order
   sendVideoPacket: (stream, nalUnits, pts, dts) ->
@@ -2009,6 +2021,7 @@ class RTMPServer
     if sessionsCount + rtmptSessionsCount is 0
       return
 
+    params = stream.params
     message = []
 
     hasKeyFrame = false
@@ -2034,9 +2047,9 @@ class RTMPServer
 
     # Add VIDEODATA tag
     if hasKeyFrame  # IDR picture (key frame)
-      firstByte = (1 << 4) | config.flv.videocodecid
+      firstByte = (1 << 4) | params.flv.videocodecid
     else  # non-IDR picture (inter frame)
-      firstByte = (2 << 4) | config.flv.videocodecid
+      firstByte = (2 << 4) | params.flv.videocodecid
     # Composition time offset: composition time (PTS) - decoding time (DTS)
     compositionTimeMs = Math.round (pts - dts) / 90  # convert to milliseconds
     if compositionTimeMs > 0x7fffff  # composition time is signed 24-bit integer
@@ -2083,16 +2096,38 @@ class RTMPServer
     return
 
   resetStreams: (stream)->
-    spsPacket = null
-    ppsPacket = null
-    isAudioStarted = false
-    isVideoStarted = false
+    stream.spsPacket = null
+    stream.ppsPacket = null
+    stream.isAudioStarted = false
+    stream.isVideoStarted = false
+    stream.params = 
+      videoBitrateKbps: config.videoBitrateKbps
+      videoFrameRate: config.videoFrameRate
+      videoHeight: null
+      videoWidth: null
 
-  startAudio: ->
-    isAudioStarted = true
+      audioBitrateKbps: config.audioBitrateKbps
+      audioSampleRate: config.audioSampleRate
+      audioChannels: null
+      audioObjectType:null
 
-  startVideo: ->
-    isVideoStarted = true
+      flv:
+        avclevel: config.flv_params.avclevel
+        avcprofile: config.flv_params.avcprofile
+        videocodecid: config.flv_params.videocodecid
+        audiocodecid: config.flv_params.audiocodecid
+    
+    # delete streams[stream]
+    # spsPacket = null
+    # ppsPacket = null
+    # isAudioStarted = false
+    # isVideoStarted = false
+
+  startAudio: (stream)->
+    stream.isAudioStarted = true
+
+  startVideo: (stream)->
+    stream.isVideoStarted = true
 
   handleRTMPTRequest: (req, callback) ->
     # /fcs/ident2 will be handled in another place
@@ -2222,6 +2257,7 @@ class RTMPTSession
         @socket.rtmptClientID = @id
         @scheduleTimeout()
         callback? null
+    socket.setNoDelay(true);
 
   clearTimeout: ->
     if @timeoutTimer?
@@ -2318,3 +2354,5 @@ class RTMPTSession
     callback null, @createHTTPResponse allBytes
 
 module.exports = RTMPServer
+module.exports.streams = streams
+

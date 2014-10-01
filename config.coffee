@@ -18,6 +18,9 @@ module.exports =
   # Average frame rate of video (informative)
   videoFrameRate: 30
 
+  # Average frame rate of video (informative)
+  audioSampleRate: 44100
+
   # Video bitrate in Kbps (informative)
   videoBitrateKbps: 2000
 
@@ -56,7 +59,7 @@ module.exports =
   # Enable RTMPT and RTMPTE
   enableRTMPT: true
 
-  flv:
+  flv_params:
     # Has video?
     hasVideo: true
 
