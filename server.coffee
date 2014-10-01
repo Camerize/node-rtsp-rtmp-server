@@ -1657,3 +1657,4 @@ parseRequest = (data) ->
 
 
 module.exports.setUp = -> rtmpServer
+module.exports.allStreams = -> RTMPServer.streams

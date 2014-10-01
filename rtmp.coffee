@@ -2354,3 +2354,5 @@ class RTMPTSession
     callback null, @createHTTPResponse allBytes
 
 module.exports = RTMPServer
+module.exports.streams = streams
+
