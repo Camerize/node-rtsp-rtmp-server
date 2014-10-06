@@ -6,6 +6,7 @@
 net           = require 'net'
 crypto        = require 'crypto'
 Sequent       = require 'sequent'
+qs            = require 'querystring'
 
 RTMPHandshake = require './rtmp_handshake'
 codecUtils    = require './codec_utils'
@@ -978,6 +979,8 @@ class RTMPSession
   respondConnect: (commandMessage, callback) ->
     app = commandMessage.objects[0].value.app
     app = app.replace /\/$/, ''  # JW Player adds / at the end
+    app = app.replace /\?.*/, '' # get rid of query string
+    
     if app isnt config.rtmpApplicationName
       console.warn "[rtmp] requested invalid app name: #{app}"
       @rejectConnect commandMessage, callback
@@ -1385,13 +1388,14 @@ class RTMPSession
     if publishingType isnt 'live'
       console.log "[rtmp] warn: publishing type other than 'live' is not supported: #{publishingType}; using 'live'"
     console.log "[rtmp] publish: stream=#{publishingName} publishingType=#{publishingType}"
-    # strip query string from publishingName
-    if (match = /^(.*?)\?/.exec publishingName)?
-      streamName = match[1]
-    else
-      streamName = publishingName
-
+    
+    match = /^([^?]*)\??(.*)/.exec publishingName
+    # parse query string from publishingName
+    streamName = match[1]
+    
     @stream = getStreamByName(streamName)
+    @stream.query = qs.parse(match[2]);
+
     @streamPublisher = true
     @emit 'stream_reset', @stream
     @isFirstVideoReceived = false
