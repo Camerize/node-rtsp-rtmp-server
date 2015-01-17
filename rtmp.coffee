@@ -139,9 +139,11 @@ parseAudioMessage = (stream, buf) ->
         console.log "[rtmp] skipping empty AudioSpecificConfig"
     when flv.AAC_PACKET_TYPE_RAW
       if not ascInfo?
-        throw new Error "[rtmp:publish] malformed audio data: AudioSpecificConfig is missing"
-      adtsHeader = new Buffer aac.createADTSHeader ascInfo, info.rawDataBlock.length
-      adtsFrame = Buffer.concat [ adtsHeader, info.rawDataBlock ]
+        console.log "[rtmp:publish] malformed audio data: AudioSpecificConfig is missing"
+        #throw new Error "[rtmp:publish] malformed audio data: AudioSpecificConfig is missing"
+      else
+        adtsHeader = new Buffer aac.createADTSHeader ascInfo, info.rawDataBlock.length
+        adtsFrame = Buffer.concat [ adtsHeader, info.rawDataBlock ]
     else
       throw new Error "[rtmp:publish] unknown AAC_PACKET_TYPE: #{info.audioDataTag.aacPacketType}"
   return {
