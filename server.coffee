@@ -28,10 +28,6 @@ aac         = require './aac'
 # Clock rate for audio stream
 audioClockRate = null
 
-
-isVideoStarted = false
-isAudioStarted = false
-
 # Create RTMP server
 rtmpServer = new RTMPServer config
 rtmpServer.on 'stream_reset', (stream)->
@@ -48,9 +44,6 @@ rtmpServer.on 'audio_data', (stream, pts, dts, adtsFrame) ->
 
 # Reset audio/video streams
 resetStreams = (stream) ->
-  isVideoStarted = false
-  isAudioStarted = false
-  spropParameterSets = ''
   rtmpServer.resetStreams(stream)
 
 rtmpServer.start ->
@@ -75,17 +68,10 @@ updateConfig = (stream)->
 
 onReceiveVideoControlBuffer = (stream, buf) ->
   console.log "video start #{stream.name}" 
-  isVideoStarted = true
-  timeForVideoRTPZero = Date.now()
-  timeForAudioRTPZero = timeForVideoRTPZero
-  spropParameterSets = ''
   rtmpServer.startVideo(stream)
 
 onReceiveAudioControlBuffer = (stream, buf) ->
   console.log "audio start #{stream.name}"
-  isAudioStarted = true
-  timeForAudioRTPZero = Date.now()
-  timeForVideoRTPZero = timeForAudioRTPZero
   rtmpServer.startAudio(stream)
 
 # Generate random 32 bit unsigned integer.

@@ -56,8 +56,12 @@ lastTimestamp = null
 
 streams = { }
 
-getStreamByName = (name)->
-  return streams[name] = streams[name] || { name: name}
+class Stream 
+  constructor: (name) ->
+    @name = name
+
+getStreamByName = (name) ->
+  return streams[name] = streams[name] || new Stream name
 
 # Generate a new client ID without collision
 generateNewClientID = ->
@@ -1554,7 +1558,7 @@ class RTMPSession
       metadata.audiosamplerate = @stream.params.audioSampleRate
       metadata.stereo          = @stream.params.audioChannels > 1
       metadata.audiochannels   = @stream.params.audioChannels
-      metadata.aacaot          = @stream.params.audioObjectType
+      metadata.aacaot          = @stream.params.ƒaudioObjectType
 
     onMetaData = createAMF0DataMessage
       chunkStreamID: 4
@@ -1699,6 +1703,7 @@ class RTMPSession
         console.log "[rtmp] requested stream: #{streamName}"
         @stream = getStreamByName(streamName)
         @streamPublisher = false
+        @streamName = streamName
         @respondPlay commandMessage, callback
       when 'closeStream'
         @closeStream callback
@@ -1932,6 +1937,11 @@ class RTMPSession
       consumeNextRTMPMessage()
 
 class RTMPServer
+  setBroadcastStream: (name) ->
+    stream = getStreamByName(name)
+    for clientID, session of sessions
+      if session.streamName == "broadcast"
+        session.stream = stream
   on: (event, listener) ->
     if @eventListeners[event]?
       @eventListeners[event].push listener
