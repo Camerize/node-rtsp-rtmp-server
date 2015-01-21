@@ -520,6 +520,7 @@ flushRTMPMessages = ->
       continue
 
     #console.log "lets stream"
+    #fixme -> remove the ! and test again, this was a hack for stream switching
     if !session.isPlaying
       if session.stream.isVideoStarted  # has video stream
         for rtmpMessage, i in msgs
@@ -548,7 +549,7 @@ flushRTMPMessages = ->
         buf = createRTMPAggregateMessage msgs, session.chunkSize
       else
         buf = createRTMPMessage msgs[0], session.chunkSize
-      console.log "Sending data to", session.streamName
+      #console.log "Sending data to", session.streamName
       session.sendData buf
 
   return
