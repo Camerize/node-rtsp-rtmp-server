@@ -54,6 +54,8 @@ lastTimestamp = null
 # isAudioStarted = false
 # isVideoStarted = false
 
+broadcasted_stream = null
+
 streams = { }
 
 class Stream 
@@ -61,6 +63,8 @@ class Stream
     @name = name
 
 getStreamByName = (name) ->
+  if (name == 'broadcast')
+    name = broadcasted_stream
   return streams[name] = streams[name] || new Stream name
 
 # Generate a new client ID without collision
@@ -515,7 +519,8 @@ flushRTMPMessages = ->
     if not msgs? || msgs.length == 0
       continue
 
-    if session.isWaitingForKeyFrame
+    #console.log "lets stream"
+    if !session.isPlaying
       if session.stream.isVideoStarted  # has video stream
         for rtmpMessage, i in msgs
           if rtmpMessage.avType is 'video' and rtmpMessage.isKeyFrame
@@ -535,7 +540,7 @@ flushRTMPMessages = ->
     if not msgs? || msgs.length == 0
       continue
 
-    if session.isPlaying
+    if session.isPlaying && !session.streamPublisher
       for rtmpMessage in msgs
         rtmpMessage.timestamp = session.getScaledTimestamp(rtmpMessage.originalTimestamp) % TIMESTAMP_ROUNDOFF
 
@@ -543,6 +548,7 @@ flushRTMPMessages = ->
         buf = createRTMPAggregateMessage msgs, session.chunkSize
       else
         buf = createRTMPMessage msgs[0], session.chunkSize
+      console.log "Sending data to", session.streamName
       session.sendData buf
 
   return
@@ -731,7 +737,7 @@ createRTMPMessage = (params, chunkSize=128) ->
     bufs.push body
     totalLength += bodyLength
 
-  return Buffer.concat bufs, totalLength
+  return Buffer.concat bufs
 
 createAMF0DataMessage = (params, chunkSize) ->
   len = 0
@@ -752,10 +758,11 @@ createAMF0CommandMessage = (params, chunkSize) ->
   len = commandBuf.length + transactionIDBuf.length
   for obj in params.objects
     len += obj.length
+  
   amf0Bytes = Buffer.concat [commandBuf, transactionIDBuf, params.objects...], len
 
   return createRTMPMessage
-    chunkStreamID: params.chunkStreamID
+    chunkStreamID: params.chunkStreamID 
     timestamp: params.timestamp
     messageTypeID: 0x14  # AMF0 Command
     messageStreamID: params.messageStreamID
@@ -1050,6 +1057,7 @@ class RTMPSession
         })
       ]
 
+    
     onBWDone = createAMF0CommandMessage
       chunkStreamID: 3
       timestamp: 0
@@ -1938,10 +1946,15 @@ class RTMPSession
 
 class RTMPServer
   setBroadcastStream: (name) ->
+    console.log "setBroadcastStream"
+    broadcasted_stream = name
     stream = getStreamByName(name)
     for clientID, session of sessions
       if session.streamName == "broadcast"
         session.stream = stream
+        console.log "switched stream"
+    return
+
   on: (event, listener) ->
     if @eventListeners[event]?
       @eventListeners[event].push listener
