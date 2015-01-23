@@ -542,8 +542,16 @@ flushRTMPMessages = ->
       continue
 
     if session.isPlaying && !session.streamPublisher
+      if session.stream_switched
+        session.server.sendVideoPacket session.stream, [session.stream.spsPacket], session.stream.last_pts, session.stream.last_dts
+        session.server.sendVideoPacket session.stream, [session.stream.ppsPacket], session.stream.last_pts, session.stream.last_dts
+        #session.constructMetadata 10, (meta) =>
+        #  session.sendData meta
+        session.stream_switched = false
+        console.log "metadata re-sent"
+
       for rtmpMessage in msgs
-        rtmpMessage.timestamp = session.getScaledTimestamp(rtmpMessage.originalTimestamp) % TIMESTAMP_ROUNDOFF
+        session.lastTimestamp = rtmpMessage.timestamp = session.offsetTimestamp + session.getScaledTimestamp(rtmpMessage.originalTimestamp) % TIMESTAMP_ROUNDOFF 
 
       if msgs.length > 1
         buf = createRTMPAggregateMessage msgs, session.chunkSize
@@ -771,8 +779,8 @@ createAMF0CommandMessage = (params, chunkSize) ->
   , chunkSize
 
 class RTMPSession
-  constructor: (socket, stream) ->
-    console.log "[rtmp] created a new session in #{stream}"
+  constructor: (socket, server) ->
+    console.log "[rtmp] created a new session in #{server}"
     @listeners = {}
     @state = SESSION_STATE_NEW
     @socket = socket
@@ -786,6 +794,10 @@ class RTMPSession
     @windowAckSize = null
     @lastSentAckBytes = 0
     @receivedBytes = 0
+    @stream_switched = false
+    @server = server
+    @lastTimestamp = 0
+    @offsetTimestamp = 0
 
   clearTimeout: ->
     if @timeoutTimer?
@@ -1543,6 +1555,18 @@ class RTMPSession
       ]
     , @chunkSize
 
+    @constructMetadata 0, (metadata) =>
+      callback null, @concatenate [
+        setChunkSize, streamBegin1, playReset,
+        playStart,
+        rtmpSampleAccess, metadata 
+      ]
+    
+    # ready for playing
+    @isWaitingForKeyFrame = true
+
+
+  constructMetadata: (timestamp, callback) ->
     metadata =
       canSeekToEnd: false
       cuePoints   : []
@@ -1571,7 +1595,7 @@ class RTMPSession
 
     onMetaData = createAMF0DataMessage
       chunkStreamID: 4
-      timestamp: 0
+      timestamp: timestamp
       messageStreamID: 1
       objects: [
         createAMF0Data('onMetaData'),
@@ -1581,17 +1605,9 @@ class RTMPSession
 
     codecConfigs = @getCodecConfigs()
 
-    callback null, @concatenate [
-      setChunkSize, streamBegin1, playReset,
-      playStart,
-      rtmpSampleAccess, onMetaData,
-      codecConfigs
-    ]
+    callback @concatenate [ onMetaData, codecConfigs ]
 
-    # ready for playing
-    @isWaitingForKeyFrame = true
-
-  getCodecConfigs: ->
+  getCodecConfigs: (timestamp) ->
     configMessages = []
 
     spsPacket = @stream.spsPacket
@@ -1631,7 +1647,7 @@ class RTMPSession
       ]
       videoConfigMessage = createVideoMessage
         body: buf
-        timestamp: 0
+        timestamp: timestamp
         chunkSize: @chunkSize
       configMessages.push videoConfigMessage
 
@@ -1650,7 +1666,7 @@ class RTMPSession
 
       audioConfigMessage = createAudioMessage
         body: buf
-        timestamp: 0
+        timestamp: timestamp
         chunkSize: @chunkSize
       configMessages.push audioConfigMessage
 
@@ -1947,13 +1963,21 @@ class RTMPSession
 
 class RTMPServer
   setBroadcastStream: (name) ->
-    console.log "setBroadcastStream"
+    console.log "setBroadcastStream", name
     broadcasted_stream = name
     stream = getStreamByName(name)
+    stream_ts = 0
     for clientID, session of sessions
-      if session.streamName == "broadcast"
+      if session.stream == stream
+        stream_ts = session.lastTimestamp
+    
+    console.log "setBroadcastStream", stream_ts
+    for clientID, session of sessions
+      if session.streamName == "broadcast" && session.stream != stream
+        session.offsetTimestamp = session.lastTimestamp - stream_ts
         session.stream = stream
-        console.log "switched stream"
+        session.stream_switched = true
+        console.log "switched stream", session.offsetTimestamp
     return
 
   on: (event, listener) ->
@@ -1976,7 +2000,7 @@ class RTMPServer
     @server = net.createServer (c) =>
       console.log "[rtmp] new client"
       c.clientId = ++clientMaxId
-      sess = new RTMPSession c
+      sess = new RTMPSession c, this
       sessions[c.clientId] = sess
       sessionsCount++
       c.rtmpSession = sess
@@ -2043,10 +2067,13 @@ class RTMPServer
 
   # Packets must be come in DTS ascending order
   sendVideoPacket: (stream, nalUnits, pts, dts) ->
+    stream.last_pts = pts
+    stream.last_dts = dts
+
     if dts > pts
       throw new Error "pts must be >= dts (pts=#{pts} dts=#{dts})"
     timestamp = convertPTSToMilliseconds dts
-    lastTimestamp = timestamp
+    @lastTimestamp = lastTimestamp = timestamp
 
     if sessionsCount + rtmptSessionsCount is 0
       return
