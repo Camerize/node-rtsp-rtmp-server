@@ -513,30 +513,33 @@ flushRTMPMessages = ->
 
   for session in allSessions
     msgs = [];
+    msgs2 = []
     for rtmpMessage, i in rtmpMessagesToSend
-      msgs.push rtmpMessage if rtmpMessage.stream == session.stream
+      msgs.push rtmpMessage if session.from_packet(rtmpMessage)
 
     if not msgs? || msgs.length == 0
       continue
 
     #console.log "lets stream"
     #fixme -> remove the ! and test again, this was a hack for stream switching
-    if !session.isPlaying
+    if session.isWaitingForKeyFrame
       if session.stream.isVideoStarted  # has video stream
         for rtmpMessage, i in msgs
           if rtmpMessage.avType is 'video' and rtmpMessage.isKeyFrame
             session.isPlaying = true
             session.playStartTimestamp = rtmpMessage.originalTimestamp
             session.isWaitingForKeyFrame = false
-            msgs = msgs[i..]
+            msgs2 = msgs[i..]
             break
       else  # audio only
         session.isPlaying = true
         session.playStartTimestamp = msgs[0].originalTimestamp
         session.isWaitingForKeyFrame = false
-        msgs = msgs
+        msgs2 = msgs
     else
-      msgs = msgs
+      msgs2 = msgs
+
+    msgs2 = msgs;
 
     if not msgs? || msgs.length == 0
       continue
@@ -551,7 +554,7 @@ flushRTMPMessages = ->
         console.log "metadata re-sent"
 
       for rtmpMessage in msgs
-        session.lastTimestamp = rtmpMessage.timestamp = session.offsetTimestamp + session.getScaledTimestamp(rtmpMessage.originalTimestamp) % TIMESTAMP_ROUNDOFF 
+        session.lastTimestamp[rtmpMessage.avType] = rtmpMessage.timestamp = session.offsetTimestamp[rtmpMessage.avType] + session.getScaledTimestamp(rtmpMessage.originalTimestamp) % TIMESTAMP_ROUNDOFF 
 
       if msgs.length > 1
         buf = createRTMPAggregateMessage msgs, session.chunkSize
@@ -796,8 +799,15 @@ class RTMPSession
     @receivedBytes = 0
     @stream_switched = false
     @server = server
-    @lastTimestamp = 0
-    @offsetTimestamp = 0
+    @lastTimestamp = { 'audio': 0, 'video': 0 }
+    @offsetTimestamp = { 'audio': 0, 'video': 0 }
+
+  from_packet: (pkt) ->
+    if (pkt.avType == 'audio')
+      if @audio_stream
+        console.log 'Audio filter'
+        return (@audio_stream == pkt.stream)
+    return @stream == pkt.stream
 
   clearTimeout: ->
     if @timeoutTimer?
@@ -1962,11 +1972,11 @@ class RTMPSession
       consumeNextRTMPMessage()
 
 class RTMPServer
-  setBroadcastStream: (name) ->
+  setBroadcastStream: (name, avType='video') ->
     console.log "setBroadcastStream", name
     broadcasted_stream = name
     stream = getStreamByName(name)
-    stream_ts = 0
+    stream_ts = { 'audio': 0, 'video': 0};
     for clientID, session of sessions
       if session.stream == stream
         stream_ts = session.lastTimestamp
@@ -1975,10 +1985,17 @@ class RTMPServer
     @emit 'broadcast_actual_changed', name
     for clientID, session of sessions
       if session.streamName == "broadcast" && session.stream != stream
-        session.offsetTimestamp = session.lastTimestamp - stream_ts
-        session.stream = stream
+        session.offsetTimestamp[avType] = session.lastTimestamp[avType] - stream_ts[avType]
+        
+        if (avType == 'audio')
+          session.audio_stream = stream
+        
+        if (avType == 'video')
+          session.stream = stream
+          session.isWaitingForKeyFrame = true
+       
         session.stream_switched = true
-        console.log "switched stream", session.offsetTimestamp
+        console.log "switched stream", avType, session.offsetTimestamp[avType]
     
 
   on: (event, listener) ->
