@@ -849,14 +849,37 @@ class RTMPSession
       body: new Buffer [
         # Event Type: 6=PingRequest
         0, 6,
-        # Server Timestamp
+       # Server Timestamp
         (lastTimestamp >> 24) & 0xff,
         (lastTimestamp >> 16) & 0xff,
         (lastTimestamp >> 8) & 0xff,
         lastTimestamp & 0xff
       ]
 
-    @sendData pingRequest
+  scheduleBytesRead: ->
+    @lastSendBytesReadScheduledTime = Date.now()
+    if !@sendBytesReadTimer
+      @sendBytesReadTimer = setTimeout =>
+        @sendBytesRead()
+      , 1000
+
+  sendBytesRead: ->
+    @sendBytesReadTimer = false
+    bytesRead = createRTMPMessage
+      chunkStreamID: 2
+      timestamp: 0
+      messageTypeID: 0x02  # Bytes Read
+      messageStreamID: 0
+      body: new Buffer [
+        # Server Timestamp
+        (@receivedBytes >> 24) & 0xff,
+        (@receivedBytes >> 16) & 0xff,
+        (@receivedBytes >> 8) & 0xff,
+        @receivedBytes & 0xff
+      ]
+
+    console.log "Sending bytes read", @receivedBytes
+    @sendData bytesRead
 
   stopPlaying: ->
     @isPlaying = false
@@ -1781,8 +1804,11 @@ class RTMPSession
     outputs = []
     seq = new Sequent
 
+    @receivedBytes += buf.length
+
+    @scheduleBytesRead()
+
     if @windowAckSize?
-      @receivedBytes += buf.length
       if @receivedBytes - @lastSentAckBytes > @windowAckSize / 2
 #        console.log "[rtmp:send] Ack=#{@receivedBytes}"
         outputs.push @createAck()
