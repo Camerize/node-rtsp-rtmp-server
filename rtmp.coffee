@@ -868,7 +868,7 @@ class RTMPSession
     bytesRead = createRTMPMessage
       chunkStreamID: 2
       timestamp: 0
-      messageTypeID: 0x02  # Bytes Read
+      messageTypeID: 0x03  # Bytes Read
       messageStreamID: 0
       body: new Buffer [
         # Server Timestamp
