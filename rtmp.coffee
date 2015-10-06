@@ -3,6 +3,7 @@
 # RTMP specification is available at:
 # http://wwwimages.adobe.com/content/dam/Adobe/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf
 
+fs            = require 'fs'
 net           = require 'net'
 crypto        = require 'crypto'
 Sequent       = require 'sequent'
@@ -59,8 +60,11 @@ broadcasted_stream = null
 streams = { }
 
 class Stream 
-  constructor: (name) ->
+  constructor: (name, fileName) ->
     @name = name
+    dumpName = (fileName || "dump-") + @stream.name + ".stream_dump";
+    console.log "Dumping to " + dumpName
+    @dump = fs.createWriteStream( dumpName )
 
 getStreamByName = (name) ->
   if (name == 'broadcast')
@@ -888,6 +892,9 @@ class RTMPSession
   teardown: ->
     if (@streamPublisher)
       @streamPublisher = false
+      @stream.dump.end( () =>
+        console.log "Dump finished and closed " + @stream.name
+      );
       @emit "stream_unpublished", @stream
     if @isTearedDown
       console.log "[rtmp] already teared down"
@@ -1934,6 +1941,17 @@ class RTMPSession
             when 8  # Audio Message (incoming)
               audioData = parseAudioMessage @stream, rtmpMessage.body
               if audioData.adtsFrame?
+
+                fileHeader = new Buffer(4 * 4)
+                
+                fileHeader.writeUInt32LE(8, 0)
+                fileHeader.writeUInt32LE(rtmpMessage.timestamp, 4)
+                fileHeader.writeUInt32LE(audioData.adtsFrame.length, 8)
+                fileHeader.writeUInt32LE(0, 12)
+
+                @stream.dump.write fileHeader
+
+                @stream.dump.write audioData.adtsFrame
                 if not @isFirstAudioReceived
                   @emit 'audio_start', @stream
                   @isFirstAudioReceived = true
@@ -1943,6 +1961,17 @@ class RTMPSession
             when 9  # Video Message (incoming)
               videoData = parseVideoMessage @stream, rtmpMessage.body
               if videoData.nalUnitGlob?
+
+                fileHeader = new Buffer(4 * 4)
+                
+                fileHeader.writeUInt32LE(9, 0)
+                fileHeader.writeUInt32LE(rtmpMessage.timestamp, 4)
+                fileHeader.writeUInt32LE(videoData.nalUnitGlob.length, 8)
+                fileHeader.writeUInt32LE(0, 12)
+
+                @stream.dump.write fileHeader
+
+                @stream.dump.write videoData.nalUnitGlob
                 if not @isFirstVideoReceived
                   @emit 'video_start', @stream
                   @isFirstVideoReceived = true
