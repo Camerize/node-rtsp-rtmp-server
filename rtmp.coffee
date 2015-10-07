@@ -6,6 +6,7 @@
 fs            = require 'fs'
 net           = require 'net'
 crypto        = require 'crypto'
+path          = require 'path'
 Sequent       = require 'sequent'
 qs            = require 'querystring'
 
@@ -59,12 +60,18 @@ broadcasted_stream = null
 
 streams = { }
 
-class Stream 
+class Stream
   constructor: (name, fileName) ->
     @name = name
-    dumpName = (fileName || "dump-") + @stream.name + ".stream_dump";
-    console.log "Dumping to " + dumpName
-    @dump = fs.createWriteStream( dumpName )
+
+  startPublish: () ->
+    timestamp = new Date().getTime()
+    dumpFileName = "rtmp-dump-" + @name + "-" + timestamp + ".stream_dump"
+    dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/tmp/"
+    dumpFilePath = path.join(dumpFileRoot, dumpFileName)
+    console.log "Dumping to " + dumpFilePath
+    if @dump then @dump.end()
+    @dump = fs.createWriteStream(dumpFilePath)
 
 getStreamByName = (name) ->
   if (name == 'broadcast')
@@ -558,7 +565,7 @@ flushRTMPMessages = ->
         console.log "metadata re-sent"
 
       for rtmpMessage in msgs
-        session.lastTimestamp[rtmpMessage.avType] = rtmpMessage.timestamp = session.offsetTimestamp[rtmpMessage.avType] + session.getScaledTimestamp(rtmpMessage.originalTimestamp) % TIMESTAMP_ROUNDOFF 
+        session.lastTimestamp[rtmpMessage.avType] = rtmpMessage.timestamp = session.offsetTimestamp[rtmpMessage.avType] + session.getScaledTimestamp(rtmpMessage.originalTimestamp) % TIMESTAMP_ROUNDOFF
 
       if msgs.length > 1
         buf = createRTMPAggregateMessage msgs, session.chunkSize
@@ -774,11 +781,11 @@ createAMF0CommandMessage = (params, chunkSize) ->
   len = commandBuf.length + transactionIDBuf.length
   for obj in params.objects
     len += obj.length
-  
+
   amf0Bytes = Buffer.concat [commandBuf, transactionIDBuf, params.objects...], len
 
   return createRTMPMessage
-    chunkStreamID: params.chunkStreamID 
+    chunkStreamID: params.chunkStreamID
     timestamp: params.timestamp
     messageTypeID: 0x14  # AMF0 Command
     messageStreamID: params.messageStreamID
@@ -1046,7 +1053,7 @@ class RTMPSession
     app = commandMessage.objects[0].value.app
     app = app.replace /\/$/, ''  # JW Player adds / at the end
     app = app.replace /\?.*/, '' # get rid of query string
-    
+
     if app isnt config.rtmpApplicationName
       console.warn "[rtmp] requested invalid app name: #{app}"
       @rejectConnect commandMessage, callback
@@ -1110,7 +1117,7 @@ class RTMPSession
         })
       ]
 
-    
+
     onBWDone = createAMF0CommandMessage
       chunkStreamID: 3
       timestamp: 0
@@ -1455,11 +1462,11 @@ class RTMPSession
     if publishingType isnt 'live'
       console.log "[rtmp] warn: publishing type other than 'live' is not supported: #{publishingType}; using 'live'"
     console.log "[rtmp] publish: stream=#{publishingName} publishingType=#{publishingType}"
-    
+
     match = /^([^?]*)\??(.*)/.exec publishingName
     # parse query string from publishingName
     streamName = match[1]
-    
+
     @stream = getStreamByName(streamName)
     @stream.query = qs.parse(match[2]);
 
@@ -1486,6 +1493,7 @@ class RTMPSession
       ]
     , @chunkSize
 
+    @stream.startPublish()
     @emit "stream_published", @stream
 
     callback null, publishStart
@@ -1599,9 +1607,9 @@ class RTMPSession
       callback null, @concatenate [
         setChunkSize, streamBegin1, playReset,
         playStart,
-        rtmpSampleAccess, metadata 
+        rtmpSampleAccess, metadata
       ]
-    
+
     # ready for playing
     @isWaitingForKeyFrame = true
 
@@ -1943,7 +1951,7 @@ class RTMPSession
               if audioData.adtsFrame?
 
                 fileHeader = new Buffer(4 * 4)
-                
+
                 fileHeader.writeUInt32LE(8, 0)
                 fileHeader.writeUInt32LE(rtmpMessage.timestamp, 4)
                 fileHeader.writeUInt32LE(audioData.adtsFrame.length, 8)
@@ -1963,7 +1971,7 @@ class RTMPSession
               if videoData.nalUnitGlob?
 
                 fileHeader = new Buffer(4 * 4)
-                
+
                 fileHeader.writeUInt32LE(9, 0)
                 fileHeader.writeUInt32LE(rtmpMessage.timestamp, 4)
                 fileHeader.writeUInt32LE(videoData.nalUnitGlob.length, 8)
@@ -2035,23 +2043,23 @@ class RTMPServer
     for clientID, session of sessions
       if session.stream == stream
         stream_ts = session.lastTimestamp
-    
+
     console.log "setBroadcastStream", stream_ts
     @emit 'broadcast_actual_changed', name
     for clientID, session of sessions
       if session.streamName == "broadcast" && session.stream != stream
         session.offsetTimestamp[avType] = session.lastTimestamp[avType] - stream_ts[avType]
-        
+
         if (avType == 'audio')
           session.audio_stream = stream
-        
+
         if (avType == 'video')
           session.stream = stream
           session.isWaitingForKeyFrame = true
-       
+
         session.stream_switched = true
         console.log "switched stream", avType, session.offsetTimestamp[avType]
-    
+
 
   on: (event, listener) ->
     if @eventListeners[event]?
@@ -2230,7 +2238,7 @@ class RTMPServer
     stream.ppsPacket = null
     stream.isAudioStarted = false
     stream.isVideoStarted = false
-    stream.params = 
+    stream.params =
       videoBitrateKbps: config.videoBitrateKbps
       videoFrameRate: config.videoFrameRate
       videoHeight: null
@@ -2246,7 +2254,7 @@ class RTMPServer
         avcprofile: config.flv_params.avcprofile
         videocodecid: config.flv_params.videocodecid
         audiocodecid: config.flv_params.audiocodecid
-    
+
     # delete streams[stream]
     # spsPacket = null
     # ppsPacket = null
@@ -2485,4 +2493,3 @@ class RTMPTSession
 
 module.exports = RTMPServer
 module.exports.streams = streams
-
