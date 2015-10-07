@@ -118,6 +118,7 @@ convertPTSToMilliseconds = (pts) ->
 parseVideoMessage = (stream, buf) ->
   info = flv.parseVideo buf
   nalUnitGlob = null
+  isKeyFrame = false
   avcInfo = stream.avcInfo
   switch info.videoDataTag.avcPacketType
     when flv.AVC_PACKET_TYPE_SEQUENCE_HEADER
@@ -134,6 +135,10 @@ parseVideoMessage = (stream, buf) ->
       if not avcInfo?
         throw new Error "[rtmp:publish] malformed video data: avcInfo is missing"
       nalUnits = flv.splitNALUnits info.nalUnits, avcInfo.nalUnitLengthSize
+      for nalUnit in nalUnits
+        nalUnitType = h264.getNALUnitType nalUnit
+        if nalUnitType is h264.NAL_UNIT_TYPE_IDR_PICTURE  # 5
+          isKeyFrame = true
       nalUnitGlob = h264.concatWithStartCodePrefix nalUnits
     when flv.AVC_PACKET_TYPE_EOS
       console.log "[rtmp:publish] received an EOS from upstream video"
@@ -143,6 +148,7 @@ parseVideoMessage = (stream, buf) ->
   return {
     info: info
     nalUnitGlob: nalUnitGlob
+    isKeyFrame: isKeyFrame
   }
 
 parseAudioMessage = (stream, buf) ->
@@ -1968,6 +1974,13 @@ class RTMPSession
               seq.done()
             when 9  # Video Message (incoming)
               videoData = parseVideoMessage @stream, rtmpMessage.body
+              if videoData.isKeyFrame && @stream.name.indexOf("_proxy") != -1
+                sps = h264.concatWithStartCodePrefix @stream.avcInfo.sps
+                pps = h264.concatWithStartCodePrefix @stream.avcInfo.pps
+                iframeNalUnitGlob = Buffer.concat [sps, pps, videoData.nalUnitGlob]
+
+                @emit 'video_iframe', @stream, iframeNalUnitGlob
+
               if videoData.nalUnitGlob?
 
                 fileHeader = new Buffer(4 * 4)
@@ -2096,6 +2109,8 @@ class RTMPServer
         @emit 'stream_reset', args...
       sess.on 'video_start', (args...) =>
         @emit 'video_start', args...
+      sess.on 'video_iframe', (args...) =>
+        @emit 'video_iframe', args...
       sess.on 'audio_start', (args...) =>
         @emit 'audio_start', args...
       sess.on 'video_data', (args...) =>
@@ -2295,6 +2310,8 @@ class RTMPServer
           @emit 'stream_reset', args...
         session.on 'video_start', (args...) =>
           @emit 'video_start', args...
+        session.on 'video_iframe', (args...) =>
+          @emit 'video_iframe', args...
         session.on 'audio_start', (args...) =>
           @emit 'audio_start', args...
         session.on 'video_data', (args...) =>
@@ -2377,6 +2394,8 @@ class RTMPTSession
       @emit 'stream_reset', args...
     @rtmpSession.on 'video_start', (args...) =>
       @emit 'video_start', args...
+    @rtmpSession.on 'video_iframe', (args...) =>
+      @emit 'video_iframe', args...
     @rtmpSession.on 'audio_start', (args...) =>
       @emit 'audio_start', args...
     @rtmpSession.on 'video_data', (args...) =>
