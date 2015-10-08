@@ -1974,12 +1974,16 @@ class RTMPSession
               seq.done()
             when 9  # Video Message (incoming)
               videoData = parseVideoMessage @stream, rtmpMessage.body
-              if videoData.isKeyFrame && @stream.name.indexOf("_proxy") != -1
+              if @stream.name.indexOf("_proxy") != -1
                 sps = h264.concatWithStartCodePrefix @stream.avcInfo.sps
                 pps = h264.concatWithStartCodePrefix @stream.avcInfo.pps
-                iframeNalUnitGlob = Buffer.concat [sps, pps, videoData.nalUnitGlob]
 
-                @emit 'video_iframe', @stream, iframeNalUnitGlob
+                iframeNalUnitGlob = videoData.nalUnitGlob
+
+                if (videoData.isKeyFrame)
+                  iframeNalUnitGlob = Buffer.concat [sps, pps, videoData.nalUnitGlob]
+
+                @emit 'video_framedata', @stream, iframeNalUnitGlob, videoData.isKeyFrame
 
               if videoData.nalUnitGlob?
 
@@ -2109,8 +2113,8 @@ class RTMPServer
         @emit 'stream_reset', args...
       sess.on 'video_start', (args...) =>
         @emit 'video_start', args...
-      sess.on 'video_iframe', (args...) =>
-        @emit 'video_iframe', args...
+      sess.on 'video_framedata', (args...) =>
+        @emit 'video_framedata', args...
       sess.on 'audio_start', (args...) =>
         @emit 'audio_start', args...
       sess.on 'video_data', (args...) =>
@@ -2310,8 +2314,8 @@ class RTMPServer
           @emit 'stream_reset', args...
         session.on 'video_start', (args...) =>
           @emit 'video_start', args...
-        session.on 'video_iframe', (args...) =>
-          @emit 'video_iframe', args...
+        session.on 'video_framedata', (args...) =>
+          @emit 'video_framedata', args...
         session.on 'audio_start', (args...) =>
           @emit 'audio_start', args...
         session.on 'video_data', (args...) =>
@@ -2394,8 +2398,8 @@ class RTMPTSession
       @emit 'stream_reset', args...
     @rtmpSession.on 'video_start', (args...) =>
       @emit 'video_start', args...
-    @rtmpSession.on 'video_iframe', (args...) =>
-      @emit 'video_iframe', args...
+    @rtmpSession.on 'video_framedata', (args...) =>
+      @emit 'video_framedata', args...
     @rtmpSession.on 'audio_start', (args...) =>
       @emit 'audio_start', args...
     @rtmpSession.on 'video_data', (args...) =>
