@@ -1963,9 +1963,12 @@ class RTMPSession
                 fileHeader.writeUInt32LE(audioData.adtsFrame.length, 8)
                 fileHeader.writeUInt32LE(0, 12)
 
-                @stream.dump.write fileHeader
+                try
+                  @stream.dump.write fileHeader
+                  @stream.dump.write audioData.adtsFrame
+                catch e
+                  console.warn("stale stream audio data on closed stream", @stream.name)
 
-                @stream.dump.write audioData.adtsFrame
                 if not @isFirstAudioReceived
                   @emit 'audio_start', @stream
                   @isFirstAudioReceived = true
@@ -1994,9 +1997,12 @@ class RTMPSession
                 fileHeader.writeUInt32LE(videoData.nalUnitGlob.length, 8)
                 fileHeader.writeUInt32LE(0, 12)
 
-                @stream.dump.write fileHeader
+                try
+                  @stream.dump.write fileHeader
+                  @stream.dump.write videoData.nalUnitGlob
+                catch e
+                  console.warn("stale stream video data on closed stream", @stream.name)
 
-                @stream.dump.write videoData.nalUnitGlob
                 if not @isFirstVideoReceived
                   @emit 'video_start', @stream
                   @isFirstVideoReceived = true
