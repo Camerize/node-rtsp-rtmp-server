@@ -1986,7 +1986,14 @@ class RTMPSession
                 if (videoData.isKeyFrame)
                   iframeNalUnitGlob = Buffer.concat [sps, pps, videoData.nalUnitGlob]
 
-                @emit 'video_framedata', @stream, iframeNalUnitGlob, videoData.isKeyFrame
+                fileHeader = new Buffer(4 * 4)
+
+                fileHeader.writeUInt32LE(9, 0)
+                fileHeader.writeUInt32LE(rtmpMessage.timestamp, 4)
+                fileHeader.writeUInt32LE(iframeNalUnitGlob.length, 8)
+                fileHeader.writeUInt32LE(0, 12)
+
+                @emit 'video_framedata', @stream, iframeNalUnitGlob, fileHeader, videoData.isKeyFrame
 
               if videoData.nalUnitGlob?
 
