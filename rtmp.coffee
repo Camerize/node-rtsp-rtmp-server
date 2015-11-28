@@ -3,6 +3,7 @@
 # RTMP specification is available at:
 # http://wwwimages.adobe.com/content/dam/Adobe/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf
 
+cp            = require 'child_process'
 fs            = require 'fs'
 net           = require 'net'
 crypto        = require 'crypto'
@@ -68,10 +69,18 @@ class Stream
     timestamp = new Date().getTime()
     dumpFileName = "rtmp-dump-" + @name + "-" + timestamp + ".stream_dump"
     dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/tmp/"
-    dumpFilePath = path.join(dumpFileRoot, dumpFileName)
+    dumpRootPath = path.join(dumpFileRoot, @name)
+    dumpFilePath = path.join(dumpRootPath, dumpFileName)
+
+    #if @dump then @dump.end()
+    try
+      fs.mkdirSync(dumpRootPath)
+    catch error
+      console.log error
+
     console.log "Dumping to " + dumpFilePath
-    if @dump then @dump.end()
     @dump = fs.createWriteStream(dumpFilePath)
+
 
 getStreamByName = (name) ->
   if (name == 'broadcast')
