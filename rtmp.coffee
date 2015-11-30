@@ -1977,6 +1977,7 @@ class RTMPSession
                   @stream.dump.write audioData.adtsFrame
                 catch e
                   console.warn("stale stream audio data on closed stream", @stream.name)
+                  console.log "error:" + e
 
                 if not @isFirstAudioReceived
                   @emit 'audio_start', @stream
@@ -2011,6 +2012,7 @@ class RTMPSession
                   @stream.dump.write videoData.nalUnitGlob
                 catch e
                   console.warn("stale stream video data on closed stream", @stream.name)
+                  console.log "error:" + e
 
                 if not @isFirstVideoReceived
                   @emit 'video_start', @stream
@@ -2297,9 +2299,11 @@ class RTMPServer
 
   startAudio: (stream)->
     stream.isAudioStarted = true
+    console.log "Start audio"
 
   startVideo: (stream)->
     stream.isVideoStarted = true
+    console.log "Start video"
 
   handleRTMPTRequest: (req, callback) ->
     # /fcs/ident2 will be handled in another place
