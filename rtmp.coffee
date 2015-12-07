@@ -66,9 +66,9 @@ class Stream
     @name = name
 
   startPublish: () ->
-    timestamp = new Date().getTime()
+    timestamp = new Date().toJSON().replace(/:/g, '.').replace(/-/g, '')
     dumpFileName = "rtmp-dump-" + @name + "-" + timestamp + ".stream_dump"
-    dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/tmp/"
+    dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/tmp/camerize/"
     dumpRootPath = path.join(dumpFileRoot, @name)
     dumpFilePath = path.join(dumpRootPath, dumpFileName)
 
@@ -80,7 +80,6 @@ class Stream
 
     console.log "Dumping to " + dumpFilePath
     @dump = fs.createWriteStream(dumpFilePath)
-
 
 getStreamByName = (name) ->
   if (name == 'broadcast')
