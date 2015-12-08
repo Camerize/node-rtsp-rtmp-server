@@ -67,7 +67,7 @@ class Stream
 
   startPublish: () ->
     timestamp = new Date().toJSON().replace(/:/g, '.').replace(/-/g, '')
-    dumpFileName = "rtmp-dump-" + @name + "-" + timestamp + ".stream_dump"
+    dumpFileName = timestamp + "-" + @name + ".stream_dump"
     dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/tmp/camerize/"
     dumpRootPath = path.join(dumpFileRoot, @name)
     dumpFilePath = path.join(dumpRootPath, dumpFileName)
