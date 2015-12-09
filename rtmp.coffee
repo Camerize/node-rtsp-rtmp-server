@@ -2078,7 +2078,7 @@ class RTMPServer
         stream_ts = session.lastTimestamp
 
     console.log "setBroadcastStream", stream_ts
-    @emit 'broadcast_actual_changed', name
+
     for clientID, session of sessions
       if session.streamName == "broadcast" && session.stream != stream
         session.offsetTimestamp[avType] = session.lastTimestamp[avType] - stream_ts[avType]
@@ -2092,7 +2092,7 @@ class RTMPServer
 
         session.stream_switched = true
         console.log "switched stream", avType, session.offsetTimestamp[avType]
-
+    @emit 'broadcast_actual_changed', name
 
   on: (event, listener) ->
     if @eventListeners[event]?
