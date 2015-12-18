@@ -65,13 +65,21 @@ class Stream
     @name = name
 
   startPublish: () ->
-    timestamp = new Date().getTime()
-    dumpFileName = "rtmp-dump-" + @name + "-" + timestamp + ".stream_dump"
-    dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/tmp/"
-    dumpFilePath = path.join(dumpFileRoot, dumpFileName)
+    timestamp = new Date().toJSON().replace(/:/g, '.').replace(/-/g, '')
+    dumpFileName = timestamp + "-" + @name + ".stream_dump"
+    dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/tmp/camerize/"
+    dumpRootPath = path.join(dumpFileRoot, @name)
+    dumpFilePath = path.join(dumpRootPath, dumpFileName)
+
+    #if @dump then @dump.end()
+    try
+      fs.mkdirSync(dumpRootPath)
+    catch error
+      console.log error
+
     console.log "Dumping to " + dumpFilePath
-    if @dump then @dump.end()
     @dump = fs.createWriteStream(dumpFilePath)
+
 
 getStreamByName = (name) ->
   if (name == 'broadcast')
