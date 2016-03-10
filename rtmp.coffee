@@ -9,6 +9,7 @@ crypto        = require 'crypto'
 path          = require 'path'
 Sequent       = require 'sequent'
 qs            = require 'querystring'
+spawn         = require ('child_process')
 
 RTMPHandshake = require './rtmp_handshake'
 codecUtils    = require './codec_utils'
@@ -67,7 +68,7 @@ class Stream
   startPublish: () ->
     timestamp = new Date().toJSON().replace(/:/g, '.').replace(/-/g, '')
     dumpFileName = timestamp + "-" + @name + ".stream_dump"
-    dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/tmp/camerize/"
+    dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/Users/aris/Desktop/camerize/sources"
     dumpRootPath = path.join(dumpFileRoot, @name)
     dumpFilePath = path.join(dumpRootPath, dumpFileName)
 
@@ -914,6 +915,7 @@ class RTMPSession
     if (@streamPublisher)
       @streamPublisher = false
       @stream.dump.end( () =>
+        console.log "Dump finished and closed " + @stream.name
         console.log "Dump finished and closed " + @stream.name
       );
       @emit "stream_unpublished", @stream
