@@ -68,7 +68,7 @@ class Stream
   startPublish: () ->
     timestamp = new Date().toJSON().replace(/:/g, '.').replace(/-/g, '')
     dumpFileName = timestamp + "-" + @name + ".stream_dump"
-    dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/var/camerize/sources"
+    dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || path.join(path.dirname(path.dirname(__dirname)), "public/sources")
     dumpRootPath = path.join(dumpFileRoot, @name)
     dumpFilePath = path.join(dumpRootPath, dumpFileName)
 
