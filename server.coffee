@@ -24,7 +24,7 @@ h264        = require './h264'
 aac         = require './aac'
 #hybrid_udp  = require './hybrid_udp'
 #bits        = require './bits'
-
+redis         = require 'redis'
 # Clock rate for audio stream
 audioClockRate = null
 
@@ -67,7 +67,7 @@ updateConfig = (stream)->
 #   return
 
 onReceiveVideoControlBuffer = (stream, buf) ->
-  console.log "video start #{stream.name}" 
+  console.log "video start #{stream.name}"
   rtmpServer.startVideo(stream)
 
 onReceiveAudioControlBuffer = (stream, buf) ->
@@ -126,7 +126,7 @@ onReceiveAudioPacket = (stream, adtsFrameGlob, pts, dts) ->
     return
   adtsInfo = aac.parseADTSFrame adtsFrames[0]
 
- 
+
   if stream.params.audioSampleRate isnt adtsInfo.sampleRate
     stream.params.audioSampleRate = adtsInfo.sampleRate
     console.log "audio sample rate has been changed to #{adtsInfo.sampleRate}"

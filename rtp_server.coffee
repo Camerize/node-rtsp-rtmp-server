@@ -103,6 +103,7 @@ rtmpServer = new RTMPServer config
 rtmpServer.on 'stream_reset', (stream)->
   console.log 'stream_reset from rtmp source'
   resetStreams(stream)
+
 rtmpServer.on 'video_start', (stream)->
   onReceiveVideoControlBuffer(stream)
 rtmpServer.on 'video_data', (stream, pts, dts, nalUnits) ->
@@ -117,7 +118,7 @@ resetStreams = (stream) ->
   isVideoStarted = false
   isAudioStarted = false
   spropParameterSets = ''
-  rtmpServer.resetStreams(stream)
+
 
 rtmpServer.start ->
   # RTMP server is ready
@@ -325,7 +326,7 @@ audioFrames = 0
 #   return
 
 onReceiveVideoControlBuffer = (stream, buf) ->
-  console.log "video start #{stream.name}" 
+  console.log "video start #{stream.name}"
   isVideoStarted = true
   timeForVideoRTPZero = Date.now()
   timeForAudioRTPZero = timeForVideoRTPZero

@@ -16,6 +16,8 @@ config        = require './config'
 h264          = require './h264'
 aac           = require './aac'
 flv           = require './flv'
+redis         = require 'redis'
+uuid          = require "node-uuid"
 
 # enum
 SESSION_STATE_NEW               = 1
@@ -65,13 +67,17 @@ class Stream
     @name = name
 
   startPublish: () ->
-    timestamp = new Date().getTime()
-    dumpFileName = "rtmp-dump-" + @name + "-" + timestamp + ".stream_dump"
+    timestamp = new Date().toJSON().replace(/:/g, '.').replace(/-/g, '').replace(/Z/g, '')
     dumpFileRoot = process.env.CAM_STREAM_DUMP_ROOT_PATH || "/tmp/"
-    dumpFilePath = path.join(dumpFileRoot, dumpFileName)
-    console.log "Dumping to " + dumpFilePath
+    dumpFileSource = @name.replace(/_proxy/g, '')
+    dumpFilePath = path.join(dumpFileRoot, dumpFileSource);
+
+    if !fs.existsSync(dumpFilePath) then fs.mkdirSync(dumpFilePath)
+    dumpFileName = "rtmp-dump-" + @name + "-" + timestamp + ".stream_dump"
+    dumpStreamFile = path.join(dumpFilePath, dumpFileName)
+    console.log "Dumping to " + dumpStreamFile
     if @dump then @dump.end()
-    @dump = fs.createWriteStream(dumpFilePath)
+    @dump = fs.createWriteStream(dumpStreamFile)
 
 getStreamByName = (name) ->
   if (name == 'broadcast')
@@ -801,6 +807,7 @@ createAMF0CommandMessage = (params, chunkSize) ->
 class RTMPSession
   constructor: (socket, server) ->
     console.log "[rtmp] created a new session in #{server}"
+
     @listeners = {}
     @state = SESSION_STATE_NEW
     @socket = socket
@@ -2078,7 +2085,7 @@ class RTMPServer
     @emit 'broadcast_actual_changed', name
     for clientID, session of sessions
       if session.streamName == "broadcast" && session.stream != stream
-        session.offsetTimestamp[avType] = session.lastTimestamp[avType] - stream_ts[avType]
+        # session.offsetTimestamp[avType] = session.lastTimestamp[avType] - stream_ts[avType]
 
         if (avType == 'audio')
           session.audio_stream = stream
@@ -2089,7 +2096,6 @@ class RTMPServer
 
         session.stream_switched = true
         console.log "switched stream", avType, session.offsetTimestamp[avType]
-
 
   on: (event, listener) ->
     if @eventListeners[event]?
@@ -2111,6 +2117,10 @@ class RTMPServer
     @server = net.createServer (c) =>
       console.log "[rtmp] new client"
       c.clientId = ++clientMaxId
+
+      # writer = fs.createWriteStream("/tmp/camerize/#{new Date().getTime()}.stream_dump")
+      # c.pipe(writer)
+
       sess = new RTMPSession c, this
       sessions[c.clientId] = sess
       sessionsCount++
